@@ -10,7 +10,7 @@
 | Name | Module |
 |------|--------|
 | **Piyush** | CLI & State Management |
-| **Protham** | Build Engine & Docksmithfile Parser |
+| **Prathama** | Build Engine & Docksmithfile Parser |
 | **Preksha** | Build Cache System |
 | **Pranav** | Container Runtime & Process Isolation |
 

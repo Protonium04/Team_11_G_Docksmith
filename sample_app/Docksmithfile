@@ -1,0 +1,6 @@
+FROM alpine:latest
+WORKDIR /app
+ENV APP_MESSAGE=Hello_from_Docksmith
+COPY . /app
+RUN chmod +x /app/run.sh
+CMD ["/app/run.sh"]

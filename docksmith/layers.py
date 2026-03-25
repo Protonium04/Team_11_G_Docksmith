@@ -8,16 +8,13 @@ import os
 import io
 import tarfile
 import hashlib
-import shutil
-import tempfile
-
-LAYERS_DIR = os.path.expanduser("~/.docksmith/layers")
+from docksmith.paths import get_layers_dir
 
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 def ensure_layers_dir():
-    os.makedirs(LAYERS_DIR, exist_ok=True)
+    os.makedirs(get_layers_dir(), exist_ok=True)
 
 
 # ── SHA-256 helpers ───────────────────────────────────────────────────────────
@@ -120,7 +117,7 @@ def store_layer(tar_bytes: bytes) -> str:
 
     digest = sha256_of_bytes(tar_bytes)
     hex_hash = digest.replace("sha256:", "")
-    layer_path = os.path.join(LAYERS_DIR, hex_hash)
+    layer_path = os.path.join(get_layers_dir(), hex_hash)
 
     if not os.path.exists(layer_path):
         # Write atomically: temp file → rename
@@ -140,13 +137,13 @@ def store_layer(tar_bytes: bytes) -> str:
 def layer_exists(layer_digest: str) -> bool:
     """Returns True if the layer tar file exists on disk."""
     hex_hash = layer_digest.replace("sha256:", "")
-    return os.path.exists(os.path.join(LAYERS_DIR, hex_hash))
+    return os.path.exists(os.path.join(get_layers_dir(), hex_hash))
 
 
 def get_layer_size(layer_digest: str) -> int:
     """Returns byte size of a stored layer tar file."""
     hex_hash = layer_digest.replace("sha256:", "")
-    layer_path = os.path.join(LAYERS_DIR, hex_hash)
+    layer_path = os.path.join(get_layers_dir(), hex_hash)
     if not os.path.exists(layer_path):
         raise FileNotFoundError(
             f"[LAYER ERROR] Layer not found: {layer_digest}\n"
@@ -161,7 +158,7 @@ def extract_layer(layer_digest: str, target_dir: str):
     Later layers overwrite earlier ones at the same path (correct overlay behaviour).
     """
     hex_hash = layer_digest.replace("sha256:", "")
-    layer_path = os.path.join(LAYERS_DIR, hex_hash)
+    layer_path = os.path.join(get_layers_dir(), hex_hash)
 
     if not os.path.exists(layer_path):
         raise FileNotFoundError(
@@ -179,7 +176,7 @@ def extract_layer(layer_digest: str, target_dir: str):
 def delete_layer(layer_digest: str):
     """Deletes a layer file from disk. Called by 'docksmith rmi' (Piyush)."""
     hex_hash = layer_digest.replace("sha256:", "")
-    layer_path = os.path.join(LAYERS_DIR, hex_hash)
+    layer_path = os.path.join(get_layers_dir(), hex_hash)
     if os.path.exists(layer_path):
         os.remove(layer_path)
 

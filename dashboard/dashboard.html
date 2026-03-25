@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>DOCKSMITH · SYSTEM MONITOR</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#020408;
+  --panel:#060d14;
+  --panel2:#08111a;
+  --border:#0a2235;
+  --border-hi:#0d3a5c;
+  --teal:#00ffe7;
+  --teal-dim:rgba(0,255,231,0.08);
+  --teal-glow:rgba(0,255,231,0.18);
+  --orange:#ff6b00;
+  --orange-dim:rgba(255,107,0,0.08);
+  --green:#39ff6a;
+  --green-dim:rgba(57,255,106,0.08);
+  --red:#ff2d55;
+  --red-dim:rgba(255,45,85,0.08);
+  --white:#e8f4ff;
+  --muted:#2a4a62;
+  --muted2:#3d6680;
+  --text:#7fb8d4;
+  --font-hud:'Orbitron',monospace;
+  --font-mono:'Share Tech Mono',monospace;
+}
+html{background:var(--bg)}
+body{
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--text);
+  background:var(--bg);
+  min-height:100vh;
+  overflow-x:hidden;
+  cursor:crosshair;
+}
+
+/* ── BACKGROUND EFFECTS ── */
+.bg-grid{
+  position:fixed;inset:0;z-index:0;
+  background-image:
+    linear-gradient(rgba(0,255,231,0.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,255,231,0.03) 1px,transparent 1px);
+  background-size:60px 60px;
+  pointer-events:none;
+}
+.bg-radial{
+  position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(0,255,231,0.04) 0%,transparent 70%);
+  pointer-events:none;
+}
+.scanlines{
+  position:fixed;inset:0;z-index:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.08) 3px,rgba(0,0,0,0.08) 4px);
+  pointer-events:none;
+}
+.corner{position:fixed;z-index:2;width:40px;height:40px;pointer-events:none}
+.corner-tl{top:12px;left:12px;border-top:1px solid var(--teal);border-left:1px solid var(--teal)}
+.corner-tr{top:12px;right:12px;border-top:1px solid var(--teal);border-right:1px solid var(--teal)}
+.corner-bl{bottom:12px;left:12px;border-bottom:1px solid var(--teal);border-left:1px solid var(--teal)}
+.corner-br{bottom:12px;right:12px;border-bottom:1px solid var(--teal);border-right:1px solid var(--teal)}
+
+/* ── LAYOUT ── */
+.shell{
+  position:relative;z-index:1;
+  max-width:1440px;margin:0 auto;
+  padding:20px 28px 36px;
+}
+
+/* ── HEADER ── */
+.hud-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 0 16px;
+  border-bottom:1px solid var(--border-hi);
+  margin-bottom:20px;
+  position:relative;
+}
+.hud-header::after{
+  content:'';position:absolute;bottom:-1px;left:0;width:180px;height:1px;
+  background:var(--teal);
+  box-shadow:0 0 12px var(--teal);
+}
+.hud-logo{
+  display:flex;flex-direction:column;gap:2px;
+}
+.hud-title{
+  font-family:var(--font-hud);
+  font-size:22px;font-weight:900;
+  color:var(--white);
+  letter-spacing:4px;
+  text-shadow:0 0 20px rgba(0,255,231,0.4);
+}
+.hud-title span{color:var(--teal)}
+.hud-sub{
+  font-size:9px;letter-spacing:3px;
+  color:var(--muted2);text-transform:uppercase;
+}
+.hud-center{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+}
+.hud-status{
+  display:flex;align-items:center;gap:8px;
+  font-size:10px;letter-spacing:2px;color:var(--green);
+}
+.hud-status-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 8px var(--green);
+  animation:blink 2s ease infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+.hud-time{
+  font-family:var(--font-hud);
+  font-size:18px;font-weight:700;
+  color:var(--teal);letter-spacing:3px;
+  text-shadow:0 0 15px rgba(0,255,231,0.5);
+}
+.hud-right{
+  display:flex;flex-direction:column;align-items:flex-end;gap:4px;
+}
+.hud-tag{
+  font-size:9px;letter-spacing:2px;
+  color:var(--muted2);border:1px solid var(--border-hi);
+  padding:3px 8px;border-radius:2px;
+}
+
+/* ── STAT ROW ── */
+.stat-row{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;margin-bottom:16px;
+}
+.stat-block{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:4px;
+  padding:14px 16px;
+  position:relative;overflow:hidden;
+  transition:border-color 0.2s,transform 0.2s;
+}
+.stat-block:hover{border-color:var(--border-hi);transform:translateY(-2px)}
+.stat-block::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+}
+.stat-block.t::before{background:var(--teal);box-shadow:0 0 8px var(--teal)}
+.stat-block.o::before{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+.stat-block.g::before{background:var(--green);box-shadow:0 0 8px var(--green)}
+.stat-block.r::before{background:var(--red);box-shadow:0 0 8px var(--red)}
+.stat-block::after{
+  content:'';position:absolute;
+  top:0;right:0;width:60px;height:60px;
+  border-radius:50%;
+  opacity:0.04;
+}
+.stat-block.t::after{background:var(--teal)}
+.stat-block.o::after{background:var(--orange)}
+.stat-block.g::after{background:var(--green)}
+.stat-block.r::after{background:var(--red)}
+.stat-lbl{
+  font-size:9px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--muted2);margin-bottom:8px;
+}
+.stat-num{
+  font-family:var(--font-hud);
+  font-size:30px;font-weight:700;
+  line-height:1;margin-bottom:5px;
+}
+.stat-block.t .stat-num{color:var(--teal);text-shadow:0 0 15px rgba(0,255,231,0.4)}
+.stat-block.o .stat-num{color:var(--orange);text-shadow:0 0 15px rgba(255,107,0,0.4)}
+.stat-block.g .stat-num{color:var(--green);text-shadow:0 0 15px rgba(57,255,106,0.4)}
+.stat-block.r .stat-num{color:var(--red);text-shadow:0 0 15px rgba(255,45,85,0.4)}
+.stat-detail{font-size:10px;color:var(--muted2)}
+
+/* ── PANEL ── */
+.panel{
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:4px;
+  overflow:hidden;
+}
+.panel-hd{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;
+  background:var(--panel2);
+  border-bottom:1px solid var(--border);
+  position:relative;
+}
+.panel-hd::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;
+}
+.panel-hd.tc::before{background:var(--teal);box-shadow:0 0 8px var(--teal)}
+.panel-hd.oc::before{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+.panel-hd.gc::before{background:var(--green);box-shadow:0 0 8px var(--green)}
+.panel-hd.rc::before{background:var(--red);box-shadow:0 0 8px var(--red)}
+.panel-ttl{
+  font-family:var(--font-hud);
+  font-size:10px;font-weight:700;
+  letter-spacing:2px;color:var(--white);
+}
+.panel-meta{font-size:9px;letter-spacing:1px;color:var(--muted2)}
+
+/* ── GRID ── */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.grid-3{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px}
+
+/* ── TABLE ── */
+.hud-table{width:100%;border-collapse:collapse}
+.hud-table th{
+  text-align:left;padding:8px 14px;
+  font-size:9px;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--muted);border-bottom:1px solid var(--border);
+  font-family:var(--font-hud);font-weight:400;
+}
+.hud-table td{
+  padding:9px 14px;
+  border-bottom:1px solid var(--border);
+  font-size:11px;
+  transition:background 0.15s;
+}
+.hud-table tbody tr:last-child td{border-bottom:none}
+.hud-table tbody tr:hover td{background:rgba(0,255,231,0.03)}
+.td-name{
+  font-family:var(--font-hud);
+  font-size:11px;font-weight:700;
+  color:var(--teal);
+  text-shadow:0 0 8px rgba(0,255,231,0.3);
+}
+.td-tag{
+  display:inline-block;font-size:9px;
+  padding:2px 6px;border-radius:2px;letter-spacing:1px;
+  background:var(--orange-dim);
+  border:1px solid rgba(255,107,0,0.25);
+  color:var(--orange);
+}
+.td-digest{font-size:10px;color:var(--muted2);font-family:var(--font-mono)}
+.td-size{font-size:11px;color:var(--text)}
+.td-age{font-size:10px;color:var(--muted2)}
+.td-layers{
+  font-family:var(--font-hud);font-size:11px;
+  color:var(--green);text-align:center;
+}
+.empty-state{
+  padding:28px;text-align:center;
+  color:var(--muted);font-size:11px;letter-spacing:1px;
+}
+
+/* ── CACHE RING ── */
+.cache-body{padding:16px}
+.ring-wrap{
+  display:flex;align-items:center;
+  justify-content:center;margin-bottom:16px;
+}
+.ring-container{position:relative;width:130px;height:130px}
+.ring-center{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  pointer-events:none;
+}
+.ring-pct{
+  font-family:var(--font-hud);
+  font-size:24px;font-weight:900;
+  color:var(--teal);
+  text-shadow:0 0 15px rgba(0,255,231,0.5);
+  line-height:1;
+}
+.ring-lbl{
+  font-size:8px;letter-spacing:2px;
+  color:var(--muted2);margin-top:3px;
+}
+.cache-rows{display:flex;flex-direction:column;gap:6px}
+.cache-r{
+  display:flex;align-items:center;
+  justify-content:space-between;
+  padding:7px 10px;
+  background:var(--panel2);
+  border:1px solid var(--border);
+  border-radius:3px;
+}
+.cache-r-left{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--text)}
+.cache-r-left .pip{width:6px;height:6px;border-radius:1px}
+.cache-r-val{
+  font-family:var(--font-hud);
+  font-size:13px;font-weight:700;
+}
+
+/* ── STORAGE BARS ── */
+.storage-body{padding:14px 16px}
+.storage-total-row{
+  display:flex;align-items:baseline;
+  justify-content:space-between;margin-bottom:10px;
+}
+.storage-total-lbl{font-size:9px;letter-spacing:2px;color:var(--muted2)}
+.storage-total-val{
+  font-family:var(--font-hud);font-size:20px;font-weight:700;
+  color:var(--white);
+  text-shadow:0 0 10px rgba(232,244,255,0.2);
+}
+.master-bar{
+  height:4px;background:var(--border);
+  border-radius:2px;overflow:hidden;
+  display:flex;gap:1px;margin-bottom:14px;
+}
+.master-seg{height:100%;border-radius:1px}
+.layer-rows{display:flex;flex-direction:column;gap:5px}
+.layer-r{
+  display:flex;align-items:center;gap:10px;
+  padding:7px 10px;
+  background:var(--panel2);border:1px solid var(--border);border-radius:3px;
+  transition:border-color 0.15s;
+}
+.layer-r:hover{border-color:var(--border-hi)}
+.layer-pip{width:6px;height:6px;border-radius:1px;flex-shrink:0}
+.layer-nm{flex:1;font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.layer-track{width:72px;height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.layer-fill{height:100%;border-radius:2px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
+.layer-sz{font-size:10px;color:var(--muted2);min-width:50px;text-align:right}
+
+/* ── BUILD LOG ── */
+.log-scroll{max-height:260px;overflow-y:auto}
+.log-scroll::-webkit-scrollbar{width:3px}
+.log-scroll::-webkit-scrollbar-track{background:transparent}
+.log-scroll::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:2px}
+.log-row{
+  display:grid;
+  grid-template-columns:82px 16px 1fr auto;
+  align-items:center;gap:10px;
+  padding:9px 14px;
+  border-bottom:1px solid var(--border);
+  transition:background 0.15s;
+}
+.log-row:last-child{border-bottom:none}
+.log-row:hover{background:rgba(0,255,231,0.02)}
+.log-ts{font-size:9px;color:var(--muted);letter-spacing:0.5px}
+.log-dot{width:5px;height:5px;border-radius:50%}
+.log-txt{font-size:10px;color:var(--text)}
+.log-txt strong{color:var(--white);font-weight:400}
+.badge{
+  font-size:8px;letter-spacing:1px;text-transform:uppercase;
+  padding:2px 7px;border-radius:2px;font-family:var(--font-hud);
+  white-space:nowrap;
+}
+.badge.hit{background:var(--green-dim);color:var(--green);border:1px solid rgba(57,255,106,0.2)}
+.badge.miss{background:var(--orange-dim);color:var(--orange);border:1px solid rgba(255,107,0,0.2)}
+.badge.built{background:var(--teal-dim);color:var(--teal);border:1px solid rgba(0,255,231,0.2)}
+.badge.error{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,45,85,0.2)}
+
+/* ── FOOTER ── */
+.hud-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:10px;padding-top:12px;
+  border-top:1px solid var(--border);
+}
+.hud-footer-l{font-size:9px;letter-spacing:2px;color:var(--muted)}
+.hud-footer-r{font-size:9px;letter-spacing:1px;color:var(--muted)}
+
+/* ── NOTICE BANNER ── */
+.notice{
+  background:var(--orange-dim);border:1px solid rgba(255,107,0,0.2);
+  border-radius:3px;padding:8px 14px;
+  font-size:10px;color:var(--orange);
+  letter-spacing:1px;margin-bottom:14px;
+  display:none;
+}
+
+/* ── ANIMATIONS ── */
+.rise{opacity:0;transform:translateY(10px);animation:rise 0.4s ease forwards}
+@keyframes rise{to{opacity:1;transform:translateY(0)}}
+.rise:nth-child(1){animation-delay:0.05s}
+.rise:nth-child(2){animation-delay:0.10s}
+.rise:nth-child(3){animation-delay:0.15s}
+.rise:nth-child(4){animation-delay:0.20s}
+
+@media(max-width:900px){
+  .stat-row{grid-template-columns:repeat(2,1fr)}
+  .grid-2,.grid-3{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-radial"></div>
+<div class="scanlines"></div>
+<div class="corner corner-tl"></div>
+<div class="corner corner-tr"></div>
+<div class="corner corner-bl"></div>
+<div class="corner corner-br"></div>
+
+<div class="shell">
+
+  <!-- HEADER -->
+  <header class="hud-header">
+    <div class="hud-logo">
+      <div class="hud-title">DOCK<span>SMITH</span></div>
+      <div class="hud-sub">Container Build System · System Monitor</div>
+    </div>
+    <div class="hud-center">
+      <div class="hud-status">
+        <div class="hud-status-dot"></div>
+        <span id="status-text">LOADING DATA...</span>
+      </div>
+      <div class="hud-time" id="clock">--:--:--</div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-tag">TEAM 11 · GROUP G</div>
+      <div class="hud-tag" id="gen-time">GEN: --</div>
+    </div>
+  </header>
+
+  <!-- NOTICE (shown if data.json missing) -->
+  <div class="notice" id="notice">
+    ⚠ DATA FILE NOT FOUND — Run: python3 dashboard/data_gen.py — then refresh this page
+  </div>
+
+  <!-- STAT ROW -->
+  <div class="stat-row" id="stat-row">
+    <div class="stat-block t rise">
+      <div class="stat-lbl">Total Images</div>
+      <div class="stat-num" id="s-images">—</div>
+      <div class="stat-detail" id="s-images-sub">loading...</div>
+    </div>
+    <div class="stat-block o rise">
+      <div class="stat-lbl">Total Layers</div>
+      <div class="stat-num" id="s-layers">—</div>
+      <div class="stat-detail" id="s-layers-sub">loading...</div>
+    </div>
+    <div class="stat-block g rise">
+      <div class="stat-lbl">Cache Hit Rate</div>
+      <div class="stat-num" id="s-hit">—</div>
+      <div class="stat-detail" id="s-hit-sub">loading...</div>
+    </div>
+    <div class="stat-block r rise">
+      <div class="stat-lbl">Storage Used</div>
+      <div class="stat-num" id="s-storage">—</div>
+      <div class="stat-detail" id="s-storage-sub">loading...</div>
+    </div>
+  </div>
+
+  <!-- ROW: Images Table + Cache Ring -->
+  <div class="grid-3">
+    <div class="panel">
+      <div class="panel-hd tc">
+        <div class="panel-ttl">LOCAL IMAGES</div>
+        <div class="panel-meta" id="img-count">— IMAGES</div>
+      </div>
+      <div id="img-table-wrap">
+        <div class="empty-state">AWAITING DATA...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd gc">
+        <div class="panel-ttl">CACHE ANALYTICS</div>
+        <div class="panel-meta">LAST BUILD</div>
+      </div>
+      <div class="cache-body">
+        <div class="ring-wrap">
+          <div class="ring-container">
+            <canvas id="ring-chart" width="130" height="130"></canvas>
+            <div class="ring-center">
+              <div class="ring-pct" id="ring-pct">—</div>
+              <div class="ring-lbl">HIT RATE</div>
+            </div>
+          </div>
+        </div>
+        <div class="cache-rows">
+          <div class="cache-r">
+            <div class="cache-r-left"><div class="pip" style="background:var(--green)"></div>Cache Hits</div>
+            <div class="cache-r-val" style="color:var(--green)" id="c-hits">—</div>
+          </div>
+          <div class="cache-r">
+            <div class="cache-r-left"><div class="pip" style="background:var(--orange)"></div>Cache Misses</div>
+            <div class="cache-r-val" style="color:var(--orange)" id="c-misses">—</div>
+          </div>
+          <div class="cache-r">
+            <div class="cache-r-left"><div class="pip" style="background:var(--muted2)"></div>Total Keys</div>
+            <div class="cache-r-val" style="color:var(--text)" id="c-total">—</div>
+          </div>
+          <div class="cache-r">
+            <div class="cache-r-left"><div class="pip" style="background:var(--teal)"></div>Index Size</div>
+            <div class="cache-r-val" style="color:var(--teal)" id="c-idxsz">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW: Build Log + Layer Storage -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-hd oc">
+        <div class="panel-ttl">BUILD HISTORY</div>
+        <div class="panel-meta" id="log-count">— EVENTS</div>
+      </div>
+      <div class="log-scroll" id="log-wrap">
+        <div class="empty-state">AWAITING DATA...</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd rc">
+        <div class="panel-ttl">LAYER STORAGE</div>
+        <div class="panel-meta">~/.DOCKSMITH/LAYERS</div>
+      </div>
+      <div class="storage-body" id="storage-wrap">
+        <div class="empty-state">AWAITING DATA...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="hud-footer">
+    <div class="hud-footer-l">DOCKSMITH MONITOR · CLOUD COMPUTING · MINIPROJECT</div>
+    <div class="hud-footer-r" id="footer-ts">—</div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ── CLOCK ──────────────────────────────────────────────────
+function tick(){
+  const t = new Date().toTimeString().slice(0,8);
+  document.getElementById('clock').textContent = t;
+}
+tick(); setInterval(tick, 1000);
+
+// ── RELATIVE TIME ─────────────────────────────────────────
+function relTime(iso){
+  if(!iso) return '—';
+  try{
+    const d = new Date(iso);
+    const s = Math.floor((Date.now() - d) / 1000);
+    if(s < 5)   return 'just now';
+    if(s < 60)  return s + 's ago';
+    if(s < 3600) return Math.floor(s/60) + 'm ago';
+    if(s < 86400) return Math.floor(s/3600) + 'h ago';
+    return Math.floor(s/86400) + 'd ago';
+  } catch(e){ return iso.slice(0,10); }
+}
+
+// ── COLOURS for layer bars ────────────────────────────────
+const COLS = ['#00ffe7','#ff6b00','#39ff6a','#ff2d55','#c084fc','#facc15','#38bdf8','#fb923c'];
+
+// ── RING CHART ────────────────────────────────────────────
+let ringChart = null;
+function drawRing(hitRate){
+  const ctx = document.getElementById('ring-chart').getContext('2d');
+  if(ringChart) ringChart.destroy();
+  ringChart = new Chart(ctx,{
+    type:'doughnut',
+    data:{
+      datasets:[{
+        data:[hitRate, 100-hitRate],
+        backgroundColor:['#39ff6a','#0a2235'],
+        borderWidth:0,hoverOffset:0
+      }]
+    },
+    options:{
+      responsive:false,
+      cutout:'72%',
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      animation:{animateRotate:true,duration:800}
+    }
+  });
+}
+
+// ── RENDER FUNCTIONS ──────────────────────────────────────
+
+function renderStats(data){
+  const imgs    = data.images || [];
+  const layers  = data.layers || [];
+  const cache   = data.cache  || {};
+  const storage = data.storage|| {};
+
+  document.getElementById('s-images').textContent     = imgs.length;
+  document.getElementById('s-images-sub').textContent = imgs.length === 1 ? '1 image built' : imgs.length + ' images built';
+
+  document.getElementById('s-layers').textContent     = layers.length;
+  document.getElementById('s-layers-sub').textContent = 'content-addressed';
+
+  const hr = cache.hit_rate ?? 0;
+  document.getElementById('s-hit').textContent        = hr + '%';
+  document.getElementById('s-hit-sub').textContent    = (cache.hits||0) + ' hits / ' + (cache.misses||0) + ' misses';
+
+  const mb = storage.total_mb || 0;
+  const val = mb >= 1024 ? (mb/1024).toFixed(1)+' GB' : mb+' MB';
+  document.getElementById('s-storage').textContent    = val;
+  document.getElementById('s-storage-sub').textContent= 'layers + cache + index';
+}
+
+function renderImages(images){
+  const wrap = document.getElementById('img-table-wrap');
+  document.getElementById('img-count').textContent = images.length + ' IMAGES';
+
+  if(!images.length){
+    wrap.innerHTML = '<div class="empty-state">NO IMAGES FOUND · RUN docksmith build FIRST</div>';
+    return;
+  }
+
+  let rows = images.map(img => {
+    const sz = img.size_mb >= 1024 ? (img.size_mb/1024).toFixed(1)+' GB' : img.size_mb.toFixed(1)+' MB';
+    return `<tr>
+      <td><span class="td-name">${img.name}</span></td>
+      <td><span class="td-tag">${img.tag}</span></td>
+      <td><span class="td-digest">${img.digest || '—'}</span></td>
+      <td><span class="td-size">${sz}</span></td>
+      <td class="td-layers">${img.layer_count}</td>
+      <td class="td-age">${relTime(img.created)}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table class="hud-table">
+      <thead><tr>
+        <th>NAME</th><th>TAG</th><th>DIGEST</th>
+        <th>SIZE</th><th>LAYERS</th><th>CREATED</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderCache(cache){
+  const hr = cache.hit_rate ?? 0;
+  document.getElementById('ring-pct').textContent = hr + '%';
+  document.getElementById('c-hits').textContent   = cache.hits    ?? '—';
+  document.getElementById('c-misses').textContent = cache.misses  ?? '—';
+  document.getElementById('c-total').textContent  = cache.total_keys ?? '—';
+  document.getElementById('c-idxsz').textContent  = (cache.index_size_kb ?? 0) + ' KB';
+  drawRing(hr);
+}
+
+function renderLog(log){
+  const wrap = document.getElementById('log-wrap');
+  document.getElementById('log-count').textContent = log.length + ' EVENTS';
+
+  if(!log.length){
+    wrap.innerHTML = '<div class="empty-state">NO BUILD EVENTS FOUND</div>';
+    return;
+  }
+
+  const statusMap = {
+    hit:   {cls:'hit',   col:'#39ff6a'},
+    miss:  {cls:'miss',  col:'#ff6b00'},
+    built: {cls:'built', col:'#00ffe7'},
+    error: {cls:'error', col:'#ff2d55'},
+  };
+
+  let rows = log.map(ev => {
+    const s   = statusMap[ev.status] || statusMap.built;
+    const ts  = ev.time ? new Date(ev.time).toTimeString().slice(0,8) : '—';
+    return `<div class="log-row">
+      <div class="log-ts">${ts}</div>
+      <div class="log-dot" style="background:${s.col};box-shadow:0 0 6px ${s.col}"></div>
+      <div class="log-txt"><strong>${ev.image||'—'}</strong> — ${ev.message||''}</div>
+      <div class="badge ${s.cls}">${ev.status||'—'}</div>
+    </div>`;
+  }).join('');
+
+  wrap.innerHTML = rows;
+}
+
+function renderStorage(storage, layers, images){
+  const wrap   = document.getElementById('storage-wrap');
+  const total  = storage.total_mb || 0;
+  const totalVal = total >= 1024 ? (total/1024).toFixed(2)+' GB' : total.toFixed(1)+' MB';
+
+  // Map layer digests back to image names
+  const digestToName = {};
+  (images||[]).forEach(img => {
+    if(img.digest) digestToName[img.digest] = img.name+':'+img.tag;
+  });
+
+  // Top 6 layers
+  const top = layers.slice(0,6);
+  const maxSz = top.length ? top[0].size_mb : 1;
+
+  const segs = top.map((l,i) =>
+    `<div class="master-seg" style="width:${Math.round(l.size_mb/total*100)}%;background:${COLS[i%COLS.length]}"></div>`
+  ).join('');
+
+  const rows = top.map((l,i) => {
+    const sz = l.size_mb >= 1024 ? (l.size_mb/1024).toFixed(1)+' GB' : l.size_mb.toFixed(1)+' MB';
+    const pct = maxSz > 0 ? Math.round(l.size_mb/maxSz*100) : 0;
+    const name = digestToName[l.digest] || l.digest;
+    return `<div class="layer-r">
+      <div class="layer-pip" style="background:${COLS[i%COLS.length]}"></div>
+      <div class="layer-nm" title="${l.digest}">${name}</div>
+      <div class="layer-track"><div class="layer-fill" style="width:${pct}%;background:${COLS[i%COLS.length]}"></div></div>
+      <div class="layer-sz">${sz}</div>
+    </div>`;
+  }).join('');
+
+  if(!top.length){
+    wrap.innerHTML = '<div class="empty-state">NO LAYERS FOUND</div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="storage-total-row">
+      <div class="storage-total-lbl">TOTAL ON DISK</div>
+      <div class="storage-total-val">${totalVal}</div>
+    </div>
+    <div class="master-bar">${segs}</div>
+    <div class="layer-rows">${rows}</div>`;
+}
+
+// ── LOAD DATA ─────────────────────────────────────────────
+async function loadData(){
+  try{
+    const res  = await fetch('data.json?t=' + Date.now());
+    if(!res.ok) throw new Error('not found');
+    const data = await res.json();
+
+    document.getElementById('status-text').textContent = 'DAEMON RUNNING';
+    document.getElementById('gen-time').textContent    = 'GEN: ' + relTime(data.generated_at);
+    document.getElementById('footer-ts').textContent   = 'DATA GENERATED: ' + (data.generated_at||'').replace('T',' ').slice(0,19) + ' UTC';
+
+    renderStats(data);
+    renderImages(data.images || []);
+    renderCache(data.cache   || {});
+    renderLog(data.build_log || []);
+    renderStorage(data.storage||{}, data.layers||[], data.images||[]);
+
+  } catch(e){
+    document.getElementById('notice').style.display = 'block';
+    document.getElementById('status-text').textContent = 'NO DATA FILE';
+    document.getElementById('status-text').style.color = 'var(--orange)';
+
+    // draw empty ring
+    drawRing(0);
+    document.getElementById('ring-pct').textContent = '0%';
+  }
+}
+
+loadData();
+// Auto-refresh every 10 seconds
+setInterval(loadData, 10000);
+</script>
+</body>
+</html>

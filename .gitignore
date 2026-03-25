@@ -8,7 +8,7 @@ setup-base
 
 # Local Docksmith runtime state
 .docksmith/
-
+.claude/
 # IDE/editor
 .vscode/
 .idea/

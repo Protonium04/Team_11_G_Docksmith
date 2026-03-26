@@ -282,7 +282,7 @@ func executeCopy(srcPattern, dest, contextDir string, currentLayers []models.Lay
 	if err != nil {
 		return "", err
 	}
-	tarBytes, err := layers.CreateDeltaTar(destAbs, allPaths)
+	tarBytes, err := layers.CreateDeltaTar(rootfs, allPaths)
 	if err != nil {
 		return "", err
 	}

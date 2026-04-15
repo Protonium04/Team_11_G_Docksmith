@@ -2,5 +2,5 @@ FROM alpine:latest
 WORKDIR /app
 ENV APP_NAME=Docksmith
 COPY . /app
-RUN echo "build-ok" > /app/build.txt
+RUN echo build-ok > build.txt
 CMD ["/bin/sh", "/app/run.sh"]

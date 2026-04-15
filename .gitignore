@@ -19,16 +19,26 @@ env/
 .coverage
 htmlcov/
 
-# Docksmith runtime state
-.docksmith/layers/
-.claude
+# Docksmith runtime state (never committed)
+.docksmith/
 
-# Compiled binaries
+# Dashboard generated data
+dashboard/data.json
+
+# Local / development-only artifacts
+fake_rootfs/
+alpine-rootfs/
+*.tar.gz
+*.tar
+
+# Compiled binaries / stray artifacts
 setup-base
-docksmith
+docksmith/docksmith
 
 # IDE / OS
 .vscode/
 .idea/
+.claude/
 *.DS_Store
 Thumbs.db
+desktop.ini

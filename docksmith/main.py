@@ -79,35 +79,15 @@ def images_cmd():
         click.echo("No images found. Build one with: docksmith build -t name:tag .")
         return
 
-    # Print table header
-    header = f"{'NAME':<20} {'TAG':<15} {'IMAGE ID':<15} {'CREATED':<30} {'SIZE'}"
+    # Print table header — rubric: Name, Tag, ID, Created
+    header = f"{'NAME':<20} {'TAG':<15} {'IMAGE ID':<15} {'CREATED'}"
     click.echo(header)
     click.echo("-" * len(header))
 
     for m in manifests:
-        # Short digest — first 12 chars after "sha256:"
         short_id = m.digest.replace("sha256:", "")[:12] if m.digest else "unknown"
-
-        # Total size = sum of all layer sizes
-        total_size = sum(layer.size for layer in m.layers)
-        size_str   = _format_size(total_size)
-
-        # Shorten created timestamp for display
         created_short = m.created[:19].replace("T", " ") if m.created else "unknown"
-
-        click.echo(
-            f"{m.name:<20} {m.tag:<15} {short_id:<15} {created_short:<30} {size_str}"
-        )
-
-
-def _format_size(size_bytes: int) -> str:
-    """Formats byte size as human-readable string."""
-    if size_bytes < 1024:
-        return f"{size_bytes}B"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f}KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f}MB"
+        click.echo(f"{m.name:<20} {m.tag:<15} {short_id:<15} {created_short}")
 
 
 # ── rmi ───────────────────────────────────────────────────────────────────────
@@ -203,7 +183,12 @@ def run(image, cmd_args, env_overrides):
     elif manifest.config.Cmd:
         command = manifest.config.Cmd
     else:
-        command = ["/bin/sh"]
+        click.echo(
+            f"[ERROR] Image '{name}:{tag}' has no CMD defined and no command was provided.\n"
+            f"  Usage: docksmith run {name}:{tag} <command> [args...]",
+            err=True,
+        )
+        sys.exit(1)
 
     workdir = manifest.config.WorkingDir or "/"
 

@@ -62,12 +62,15 @@ def test_miss_on_empty_index():
     result = c.lookup("d1", "RUN echo hi", "/app", "")
     assert result is None
 
-def test_store_then_lookup_hits():
+def test_store_then_lookup_hits(tmp_path, monkeypatch):
+    # Write a real dummy layer so the disk-existence check passes
+    from docksmith.layers import store_layer
+    digest = store_layer(b"dummy-layer-bytes-for-cache-test")
     c = fresh_cache()
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc123")
+    c.store("d1", "RUN echo hi", "/app", "", None, digest)
     c._force_miss = False   # reset cascade so we can test lookup
     result = c.lookup("d1", "RUN echo hi", "/app", "")
-    assert result == "sha256:abc123"
+    assert result == digest
 
 def test_no_cache_always_misses():
     c = CacheManager(no_cache=True)

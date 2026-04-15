@@ -70,7 +70,7 @@ def create_delta_tar(base_dir: str, paths_to_include: list) -> bytes:
 
     with tarfile.open(fileobj=buf, mode="w:") as tar:
         for abs_path in sorted_paths:
-            if not os.path.exists(abs_path):
+            if not os.path.lexists(abs_path):
                 continue
 
             rel_path = os.path.relpath(abs_path, base_dir)
@@ -173,7 +173,7 @@ def extract_layer(layer_digest: str, target_dir: str):
 
     with tarfile.open(layer_path, "r:") as tar:
         try:
-            tar.extractall(path=target_dir, filter="data")
+            tar.extractall(path=target_dir, filter="tar")
         except TypeError:
             tar.extractall(path=target_dir)
 

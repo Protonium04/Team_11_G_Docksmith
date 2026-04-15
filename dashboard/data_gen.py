@@ -52,38 +52,42 @@ def load_manifest(manifest_path):
 
 
 def collect_images():
-    """Reads all image manifests from ~/.docksmith/images/"""
+    """Reads all image manifests from ~/.docksmith/images/<name>/<tag>.json"""
     images = []
     if not os.path.exists(IMAGES_DIR):
         return images
 
-    for fname in sorted(os.listdir(IMAGES_DIR)):
-        if not fname.endswith(".json"):
+    for name_dir in sorted(os.listdir(IMAGES_DIR)):
+        name_path = os.path.join(IMAGES_DIR, name_dir)
+        if not os.path.isdir(name_path):
             continue
-        path = os.path.join(IMAGES_DIR, fname)
-        m = load_manifest(path)
-        if not m:
-            continue
+        for fname in sorted(os.listdir(name_path)):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(name_path, fname)
+            m = load_manifest(path)
+            if not m:
+                continue
 
-        # Compute total size from layers
-        total_size = 0.0
-        for layer in m.get("layers", []):
-            digest = layer.get("digest", "")
-            hex_hash = digest.replace("sha256:", "")
-            lpath = os.path.join(LAYERS_DIR, hex_hash)
-            total_size += get_file_size_mb(lpath)
+            # Compute total size from layers
+            total_size = 0.0
+            for layer in m.get("layers", []):
+                digest = layer.get("digest", "")
+                hex_hash = digest.replace("sha256:", "")
+                lpath = os.path.join(LAYERS_DIR, hex_hash)
+                total_size += get_file_size_mb(lpath)
 
-        images.append({
-            "name":       m.get("name", "unknown"),
-            "tag":        m.get("tag", "latest"),
-            "digest":     m.get("digest", "")[:19],
-            "created":    m.get("created", ""),
-            "size_mb":    round(total_size, 2),
-            "layer_count": len(m.get("layers", [])),
-            "cmd":        m.get("config", {}).get("Cmd", []),
-            "workdir":    m.get("config", {}).get("WorkingDir", "/"),
-            "env":        m.get("config", {}).get("Env", []),
-        })
+            images.append({
+                "name":       m.get("name", "unknown"),
+                "tag":        m.get("tag", "latest"),
+                "digest":     m.get("digest", "")[:19],
+                "created":    m.get("created", ""),
+                "size_mb":    round(total_size, 2),
+                "layer_count": len(m.get("layers", [])),
+                "cmd":        m.get("config", {}).get("Cmd", []),
+                "workdir":    m.get("config", {}).get("WorkingDir", "/"),
+                "env":        m.get("config", {}).get("Env", []),
+            })
 
     return images
 
@@ -168,18 +172,22 @@ def collect_build_log():
     # Fallback: synthesise log from manifest created times
     events = []
     if os.path.exists(IMAGES_DIR):
-        for fname in os.listdir(IMAGES_DIR):
-            if not fname.endswith(".json"):
+        for name_dir in os.listdir(IMAGES_DIR):
+            name_path = os.path.join(IMAGES_DIR, name_dir)
+            if not os.path.isdir(name_path):
                 continue
-            m = load_manifest(os.path.join(IMAGES_DIR, fname))
-            if not m:
-                continue
-            events.append({
-                "time":    m.get("created", ""),
-                "image":   f"{m.get('name','')}:{m.get('tag','')}",
-                "message": "built successfully",
-                "status":  "built",
-            })
+            for fname in os.listdir(name_path):
+                if not fname.endswith(".json"):
+                    continue
+                m = load_manifest(os.path.join(name_path, fname))
+                if not m:
+                    continue
+                events.append({
+                    "time":    m.get("created", ""),
+                    "image":   f"{m.get('name','')}:{m.get('tag','')}",
+                    "message": "built successfully",
+                    "status":  "built",
+                })
 
     events.sort(key=lambda x: x.get("time", ""), reverse=True)
     return events[:20]

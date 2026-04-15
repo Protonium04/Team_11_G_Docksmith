@@ -16,6 +16,7 @@ import shutil
 import tarfile
 import tempfile
 import urllib.request
+from datetime import datetime, timezone
 
 from docksmith.layers import collect_all_paths, create_delta_tar, store_layer
 from docksmith.models import ImageConfig, ImageManifest, LayerEntry
@@ -50,7 +51,7 @@ def split_image_ref(ref: str) -> tuple[str, str]:
 def _extract_tar(tar_path: str, out_dir: str) -> None:
     with tarfile.open(tar_path, "r:*") as tar:
         try:
-            tar.extractall(path=out_dir, filter="data")
+            tar.extractall(path=out_dir, filter="tar")
         except TypeError:
             tar.extractall(path=out_dir)
 
@@ -70,8 +71,8 @@ def import_rootfs(image_ref: str, rootfs_dir: str) -> ImageManifest:
         name=name,
         tag=tag,
         digest="",
-        created="",
-        config=ImageConfig(Env=[], Cmd=["/bin/sh"], WorkingDir="/"),
+        created=datetime.now(timezone.utc).isoformat(),
+        config=ImageConfig(Env=[], Cmd=["cmd"] if os.name == "nt" else ["/bin/sh"], WorkingDir="/"),
         layers=[
             LayerEntry(
                 digest=digest,

@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 from typing import Dict, Iterable, List, Optional
@@ -71,6 +72,32 @@ def isolate_and_run(
     if _can_attempt_namespace_isolation():
         preexec_fn = _namespace_preexec(rootfs, workdir or "/")
         cwd = None
+    elif os.name == "nt" and command and command[0] in ("/bin/sh", "/bin/bash", "sh", "bash"):
+        # Windows fallback: prefer real sh.exe (git-bash/MSYS) if on PATH,
+        # otherwise translate to cmd.exe equivalents.
+        real_sh = shutil.which("sh") or shutil.which("bash")
+        if real_sh:
+            if len(command) >= 2 and command[1] == "-c":
+                command = [real_sh, "-c"] + list(command[2:])
+            elif len(command) >= 2:
+                script = command[1]
+                if script.startswith("/"):
+                    script_abs = os.path.join(rootfs, script.lstrip("/"))
+                    script = script_abs.replace("\\", "/")
+                command = [real_sh, script]
+            else:
+                command = [real_sh]
+        else:
+            if len(command) >= 2 and command[1] == "-c":
+                command = ["cmd", "/c"] + list(command[2:])
+            elif len(command) >= 2:
+                script = command[1]
+                if script.startswith("/"):
+                    script_abs = os.path.join(rootfs, script.lstrip("/"))
+                    script = os.path.relpath(script_abs, host_workdir)
+                command = ["cmd", "/c", script]
+            else:
+                command = ["cmd"]
 
     try:
         proc = subprocess.Popen(

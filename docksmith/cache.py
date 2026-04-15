@@ -112,11 +112,10 @@ class CacheManager:
 
         cached_digest = index[key]
 
-        # Verify layer file actually exists on disk
+        # Verify layer file actually exists on disk (rubric: missing layer = miss)
         try:
             from docksmith.layers import layer_exists
-            strict = os.environ.get("DOCKSMITH_STRICT_CACHE", "").strip() in {"1", "true", "TRUE"}
-            if strict and not layer_exists(cached_digest):
+            if not layer_exists(cached_digest):
                 return None
         except ImportError:
             pass  # layers.py not ready yet — skip disk check during solo testing

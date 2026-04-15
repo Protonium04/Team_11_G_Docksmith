@@ -346,7 +346,7 @@ def _execute_copy(
                 )
 
         all_paths = collect_all_paths(dest_abs)
-        tar_bytes = create_delta_tar(dest_abs, all_paths)
+        tar_bytes = create_delta_tar(rootfs, all_paths)
         return store_layer(tar_bytes)
 
 

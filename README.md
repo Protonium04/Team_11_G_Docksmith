@@ -167,7 +167,7 @@ docksmith run -e KEY=VALUE <name:tag> [command]
 ### Responsibilities:
 - Set up the project repository and overall code structure
 - Implement the `~/.docksmith/` directory layout — `images/`, `layers/`, `cache/`
-- Implement all four CLI entry points: `build`, `images`, `rmi`, `run`
+- Implement all four CLI entry points: `build`, `images`, `rmi`, `run`, `clean`
 - Image manifest serialisation and deserialisation (JSON read/write)
 - Manifest digest computation (hash canonical form with `digest: ""`, write final with actual hash)
 - `docksmith images` — list all manifests with Name, Tag, 12-char ID, Created

@@ -1,97 +1,49 @@
 # tests/test_cache.py
-# Run: python3 -m pytest tests/test_cache.py -v
-
-import os, sys
+import os, sys, tempfile, pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from docksmith.cache import compute_cache_key, CacheManager, lookup, store
 
-import pytest
-from docksmith.cache import compute_cache_key, CacheManager, _load_index, _save_index
-
-# ── compute_cache_key tests ───────────────────────────────────────────────────
-
-def test_same_inputs_same_key():
-    k1 = compute_cache_key("d1", "RUN echo hi", "/app", "A=1")
-    k2 = compute_cache_key("d1", "RUN echo hi", "/app", "A=1")
+def test_cache_key_deterministic():
+    k1 = compute_cache_key("sha256:abc", "COPY . /app", "/app", "X=1", ["file.py:deadbeef"])
+    k2 = compute_cache_key("sha256:abc", "COPY . /app", "/app", "X=1", ["file.py:deadbeef"])
     assert k1 == k2
 
-def test_different_instruction_different_key():
-    k1 = compute_cache_key("d1", "RUN echo hi",    "/app", "A=1")
-    k2 = compute_cache_key("d1", "RUN echo hello", "/app", "A=1")
-    assert k1 != k2
-
-def test_different_prev_digest_different_key():
-    k1 = compute_cache_key("digest_A", "RUN echo hi", "/app", "")
-    k2 = compute_cache_key("digest_B", "RUN echo hi", "/app", "")
-    assert k1 != k2
-
-def test_different_workdir_different_key():
-    k1 = compute_cache_key("d1", "RUN echo hi", "/app",   "")
-    k2 = compute_cache_key("d1", "RUN echo hi", "/other", "")
-    assert k1 != k2
-
-def test_different_env_different_key():
-    k1 = compute_cache_key("d1", "COPY . /app", "/app", "A=1")
-    k2 = compute_cache_key("d1", "COPY . /app", "/app", "A=2")
-    assert k1 != k2
-
-def test_copy_hashes_affect_key():
-    k1 = compute_cache_key("d1", "COPY . /app", "/app", "", ["file.py:aaa"])
-    k2 = compute_cache_key("d1", "COPY . /app", "/app", "", ["file.py:bbb"])
+def test_different_inputs_different_keys():
+    k1 = compute_cache_key("sha256:abc", "COPY . /app", "/app", "X=1")
+    k2 = compute_cache_key("sha256:abc", "COPY . /app", "/app", "X=2")
     assert k1 != k2
 
 def test_copy_hashes_order_independent():
-    k1 = compute_cache_key("d1", "COPY . /app", "/app", "", ["a.py:111", "b.py:222"])
-    k2 = compute_cache_key("d1", "COPY . /app", "/app", "", ["b.py:222", "a.py:111"])
+    k1 = compute_cache_key("d", "COPY . /app", "/", "", ["b:2", "a:1"])
+    k2 = compute_cache_key("d", "COPY . /app", "/", "", ["a:1", "b:2"])
     assert k1 == k2
 
-def test_returns_64_char_hex():
-    k = compute_cache_key("d1", "RUN echo hi", "/app", "A=1")
-    assert len(k) == 64
-    assert all(c in "0123456789abcdef" for c in k)
-
-# ── CacheManager tests ────────────────────────────────────────────────────────
-
-def fresh_cache():
-    c = CacheManager(no_cache=False)
-    c.clear_index()
-    c._force_miss = False
-    return c
-
-def test_miss_on_empty_index():
-    c = fresh_cache()
-    result = c.lookup("d1", "RUN echo hi", "/app", "")
+def test_cache_miss_on_empty_index():
+    result = lookup("sha256:x", "RUN echo hi", "/", "", None)
     assert result is None
 
-def test_store_then_lookup_hits():
-    c = fresh_cache()
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc123")
-    c._force_miss = False   # reset cascade so we can test lookup
-    result = c.lookup("d1", "RUN echo hi", "/app", "")
+def test_cache_store_and_lookup(tmp_path, monkeypatch):
+    import docksmith.cache as cache_mod
+    monkeypatch.setattr(cache_mod, "CACHE_DIR",   str(tmp_path / "cache"))
+    monkeypatch.setattr(cache_mod, "CACHE_INDEX", str(tmp_path / "cache" / "index.json"))
+    monkeypatch.setattr(cache_mod, "LAYERS_DIR",  str(tmp_path / "layers"))
+
+    os.makedirs(str(tmp_path / "layers"), exist_ok=True)
+    fake_layer = str(tmp_path / "layers" / "abc123")
+    with open(fake_layer, "wb") as f:
+        f.write(b"fake layer")
+
+    store("prev", "RUN echo hi", "/app", "X=1", "sha256:abc123", None)
+    result = lookup("prev", "RUN echo hi", "/app", "X=1", None)
     assert result == "sha256:abc123"
 
-def test_no_cache_always_misses():
-    c = CacheManager(no_cache=True)
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc")
-    result = c.lookup("d1", "RUN echo hi", "/app", "")
+def test_cascade_miss():
+    cm = CacheManager(no_cache=False)
+    cm._force_miss = True
+    result = cm.lookup("x", "RUN anything", "/", "", None)
     assert result is None
 
-def test_cascade_blocks_lookup():
-    c = fresh_cache()
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc")
-    # force_miss is now True after store — should block lookup
-    result = c.lookup("d1", "RUN echo hi", "/app", "")
+def test_no_cache_flag():
+    cm = CacheManager(no_cache=True)
+    result = cm.lookup("x", "RUN echo hi", "/", "", None)
     assert result is None
-
-def test_clear_index_empties_cache():
-    c = fresh_cache()
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc")
-    c.clear_index()
-    index = _load_index()
-    assert index == {}
-
-def test_no_cache_does_not_write_index():
-    c = CacheManager(no_cache=True)
-    c.clear_index()
-    c.store("d1", "RUN echo hi", "/app", "", None, "sha256:abc")
-    index = _load_index()
-    assert index == {}

@@ -1,16 +1,13 @@
 # tests/test_parser.py
-# Run: python3 -m pytest tests/test_parser.py -v
-
 import os, sys, tempfile, pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from docksmith.parser import (
     parse_docksmithfile, parse_from_args,
     parse_env_args, parse_copy_args, parse_cmd_args,
 )
 
 def write_df(content):
-    tmp = tempfile.NamedTemporaryFile(mode="w", suffix="Docksmithfile", delete=False)
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix="_Docksmithfile", delete=False)
     tmp.write(content); tmp.close(); return tmp.name
 
 def test_parses_all_six():

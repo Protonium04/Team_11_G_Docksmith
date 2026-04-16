@@ -58,13 +58,25 @@ def create_delta_tar(base_dir: str, paths_to_include: list) -> bytes:
 
 
 def collect_all_paths(directory: str) -> list:
+    """
+    Return all paths under directory in sorted order.
+    Uses os.scandir so directory-symlinks (e.g. bin -> usr/bin on Debian 12)
+    are included as entries rather than being silently skipped by os.walk.
+    """
     all_paths = []
-    for root, dirs, files in os.walk(directory):
-        dirs.sort()
-        if root != directory:
-            all_paths.append(root)
-        for fname in sorted(files):
-            all_paths.append(os.path.join(root, fname))
+
+    def _walk(path: str):
+        try:
+            entries = sorted(os.scandir(path), key=lambda e: e.name)
+        except PermissionError:
+            return
+        for entry in entries:
+            all_paths.append(entry.path)
+            # Recurse into real directories only; do NOT follow symlinks
+            if entry.is_dir(follow_symlinks=False):
+                _walk(entry.path)
+
+    _walk(directory)
     return all_paths
 
 
@@ -101,6 +113,29 @@ def get_layer_size(layer_digest: str) -> int:
     return os.path.getsize(layer_path)
 
 
+def _ensure_usrmerge(rootfs: str):
+    """
+    Debian 12+ uses 'usrmerge': /bin, /sbin, /lib, /lib64 are symlinks to
+    their /usr/ counterparts.  Our re-tar code uses os.walk which silently
+    drops directory-symlinks, so we restore them here after extraction.
+    """
+    usrmerge = {
+        "bin":    "usr/bin",
+        "sbin":   "usr/sbin",
+        "lib":    "usr/lib",
+        "lib32":  "usr/lib32",
+        "lib64":  "usr/lib64",
+        "libx32": "usr/libx32",
+    }
+    for link_name, target in usrmerge.items():
+        link_path   = os.path.join(rootfs, link_name)
+        target_path = os.path.join(rootfs, target)
+        # Only create the symlink when the link is absent but the target exists
+        if not os.path.exists(link_path) and not os.path.islink(link_path):
+            if os.path.isdir(target_path):
+                os.symlink(target, link_path)
+
+
 def extract_layer(layer_digest: str, target_dir: str):
     hex_hash   = layer_digest.replace("sha256:", "")
     layer_path = os.path.join(LAYERS_DIR, hex_hash)
@@ -108,9 +143,14 @@ def extract_layer(layer_digest: str, target_dir: str):
         raise FileNotFoundError(f"[RUNTIME ERROR] Layer not found: {layer_digest}")
     with tarfile.open(layer_path, "r:") as tar:
         try:
-            tar.extractall(path=target_dir, filter="data")
+            # Use 'fully_trusted' — container rootfs layers contain absolute symlinks
+            # (e.g. /etc/alternatives/awk → /usr/bin/mawk) which are expected.
+            tar.extractall(path=target_dir, filter="fully_trusted")
         except TypeError:
+            # Python < 3.12 doesn't support 'filter'
             tar.extractall(path=target_dir)
+    # Restore Debian usrmerge symlinks that may have been stripped by re-tarring
+    _ensure_usrmerge(target_dir)
 
 
 def delete_layer(layer_digest: str):

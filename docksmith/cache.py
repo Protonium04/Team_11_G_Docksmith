@@ -1,56 +1,45 @@
 # docksmith/cache.py
 # ============================================================
-#  PREKSHA — File 1: Build Cache System
-#  Test: python3 -m pytest tests/test_cache.py -v
+#  PREKSHA — Build Cache System
 # ============================================================
 
 import os
 import json
 import hashlib
 
-from docksmith.paths import cache_dir
-
-CACHE_DIR   = cache_dir()
+CACHE_DIR   = os.path.expanduser("~/.docksmith/cache")
 CACHE_INDEX = os.path.join(CACHE_DIR, "index.json")
+LAYERS_DIR  = os.path.expanduser("~/.docksmith/layers")
 
-
-# ── Setup ─────────────────────
 
 def ensure_cache_dir():
     os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-# ── Cache key computation ───────────────
 def compute_cache_key(
-    prev_digest:      str,
+    prev_digest: str,
     instruction_text: str,
-    workdir:          str,
-    env_serialized:   str,
-    copy_hashes:      list = None,
+    workdir: str,
+    env_serialized: str,
+    copy_hashes: list = None,
 ) -> str:
     """
-    Computes a deterministic SHA-256 cache key from all inputs.
-    Inputs joined with null bytes to prevent collisions.
+    Deterministic SHA-256 cache key.
+    Null-byte separators prevent collisions between fields.
     """
     parts = [
-        prev_digest      or "",
-        instruction_text or "",
-        workdir          or "",
-        env_serialized   or "",
+        prev_digest or "",
+        instruction_text,
+        workdir or "",
+        env_serialized or "",
+        "\x00".join(sorted(copy_hashes)) if copy_hashes else "",
     ]
-
-    if copy_hashes:
-        parts.append("|".join(sorted(copy_hashes)))
-    else:
-        parts.append("")
-
     raw = "\x00".join(parts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-# ── Cache index read/write ────────
-
 def _load_index() -> dict:
+    ensure_cache_dir()
     if not os.path.exists(CACHE_INDEX):
         return {}
     try:
@@ -62,94 +51,90 @@ def _load_index() -> dict:
 
 def _save_index(index: dict):
     ensure_cache_dir()
-    tmp_path = CACHE_INDEX + ".tmp"
-    try:
-        with open(tmp_path, "w") as f:
-            json.dump(index, f, indent=2)
-        os.replace(tmp_path, CACHE_INDEX)
-    except Exception:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
-        raise
+    tmp = CACHE_INDEX + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(index, f, indent=2)
+    os.rename(tmp, CACHE_INDEX)
 
 
-# ── CacheManager class ───────
+def lookup(
+    prev_digest: str,
+    instruction_text: str,
+    workdir: str,
+    env_serialized: str,
+    copy_hashes: list = None,
+) -> str:
+    """
+    Returns cached layer digest if it exists on disk, else None.
+    """
+    key    = compute_cache_key(prev_digest, instruction_text, workdir, env_serialized, copy_hashes)
+    index  = _load_index()
+    digest = index.get(key)
+    if digest is None:
+        return None
+
+    # Verify the layer file actually exists
+    hex_hash   = digest.replace("sha256:", "")
+    layer_path = os.path.join(LAYERS_DIR, hex_hash)
+    if not os.path.exists(layer_path):
+        return None
+
+    return digest
+
+
+def store(
+    prev_digest: str,
+    instruction_text: str,
+    workdir: str,
+    env_serialized: str,
+    result_digest: str,
+    copy_hashes: list = None,
+):
+    """Writes cache key → layer digest into the index."""
+    key   = compute_cache_key(prev_digest, instruction_text, workdir, env_serialized, copy_hashes)
+    index = _load_index()
+    index[key] = result_digest
+    _save_index(index)
+
 
 class CacheManager:
     """
-    Main cache interface used by Protham's builder.py.
+    Stateful cache manager for a single build.
+    Tracks cascade: once a miss occurs, all subsequent steps are forced misses.
     """
 
     def __init__(self, no_cache: bool = False):
         self.no_cache    = no_cache
-        self._force_miss = False
+        self._force_miss = False  # cascade flag
 
     def lookup(
         self,
-        prev_digest:      str,
+        prev_digest: str,
         instruction_text: str,
-        workdir:          str,
-        env_serialized:   str,
-        copy_hashes:      list = None,
+        workdir: str,
+        env_serialized: str,
+        copy_hashes: list = None,
     ):
-        """
-        Returns layer digest string if HIT, None if MISS.
-        """
-        if self.no_cache:
+        if self.no_cache or self._force_miss:
             return None
-
-        if self._force_miss:
-            return None
-
-        key   = compute_cache_key(
-            prev_digest, instruction_text, workdir,
-            env_serialized, copy_hashes
-        )
-        index = _load_index()
-
-        if key not in index:
-            return None
-
-        cached_digest = index[key]
-
-        # Verify layer file actually exists on disk
-        try:
-            from docksmith.layers import layer_exists
-            strict = os.environ.get("DOCKSMITH_STRICT_CACHE", "").strip() in {"1", "true", "TRUE"}
-            if strict and not layer_exists(cached_digest):
-                return None
-        except ImportError:
-            pass  # layers.py not ready yet — skip disk check during solo testing
-
-        return cached_digest
+        result = lookup(prev_digest, instruction_text, workdir, env_serialized, copy_hashes)
+        if result is None:
+            self._force_miss = True  # cascade: all remaining steps are misses
+        return result
 
     def store(
         self,
-        prev_digest:      str,
+        prev_digest: str,
         instruction_text: str,
-        workdir:          str,
-        env_serialized:   str,
-        copy_hashes:      list = None,
-        result_digest:    str  = "",
+        workdir: str,
+        env_serialized: str,
+        result_digest: str,
+        copy_hashes: list = None,
     ):
-        """
-        Stores a cache entry. Also sets cascade flag.
-        """
         if self.no_cache:
             return
+        store(prev_digest, instruction_text, workdir, env_serialized, result_digest, copy_hashes)
 
-        self._force_miss = True
-
-        key   = compute_cache_key(
-            prev_digest, instruction_text, workdir,
-            env_serialized, copy_hashes
-        )
-        index = _load_index()
-        index[key] = result_digest
-        _save_index(index)
-
-    def bust(self):
-        self._force_miss = True
-
-    def clear_index(self):
-        _save_index({})
+    @property
+    def cache_busted(self) -> bool:
+        return self._force_miss

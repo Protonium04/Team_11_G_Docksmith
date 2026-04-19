@@ -1,0 +1,300 @@
+DOCKSMITH 
+Project Requirements 
+ 
+1. Purpose 
+Docksmith is a simplified Docker-like build and runtime system built from scratch. You will understand 
+three things deeply: how build caching and content-addressing work, how process isolation works at the 
+OS level, and how images are assembled from layers and run as containers. 
+Out of scope: networking, image registries, resource limits, multi-stage builds, bind mounts, detached 
+containers, daemon processes. 
+2. Architecture 
+A single CLI binary — no daemon. All state lives in ~/.docksmith/ on disk. 
+Component 
+Responsibility 
+docksmith (CLI) 
+User-facing binary. Reads/writes state, invokes the build engine, runs containers 
+directly. 
+Build Engine 
+Subsystem of the CLI. Parses Docksmithfile, manages layers and cache, executes 
+instructions in isolation, writes artifacts. 
+ 
+State directory layout: 
+~/.docksmith/ 
+  images/    # one JSON manifest per image 
+  layers/    # content-addressed tar files named by digest 
+  cache/     # index mapping cache keys to layer digests 
+3. Build Language 
+Files are named Docksmithfile. Every instruction below must be implemented. Any unrecognised 
+instruction fails immediately with a clear error and line number. 
+Instruction 
+Required Behaviour 
+FROM 
+<image>[:<tag>] 
+Find the image in the local store (see section 4.3), use its layers as the base filesystem. 
+Fail with a clear error if the image is not found. 
+COPY <src> <dest> 
+Copy files from the build context into the image. Supports * and ** globs. Creates 
+missing directories. 
+RUN <command> 
+Execute a shell command inside the filesystem assembled so far — not on the host. 
+Result becomes a new image layer. 
+WORKDIR <path> 
+Set the working directory for subsequent instructions.Does not produce a layer. If the 
+path does not exist in any previously extracted layer, the build engine creates it as an 
+empty directory in the temporary working filesystem immediately before the next 
+Instruction 
+Required Behaviour 
+layer-producing instruction (COPY or RUN) executes. This creation is silent and not 
+stored as a tar delta. 
+ENV <key>=<value> 
+Store an environment variable in the image config. Injected into every container from 
+this image. Does not produce a layer. These values are also injected into the 
+environment of every RUN command during build. 
+CMD 
+["exec","arg"] 
+Default command on container start when no override is given at runtime. JSON array 
+form required. Does not produce a layer. 
+ 
+Hard Requirement: RUN must execute inside the assembled layer filesystem, not on the host. The command 
+sees the image filesystem as its root with no access to host files. 
+Only these 6 instructions are required. EXPOSE, VOLUME, ADD, ARG, ENTRYPOINT, and SHELL are out of 
+scope. 
+4. Image Format 
+4.1 Manifest 
+Every image is a JSON file in images/: 
+{ 
+  "name": "myapp", 
+  "tag": "latest", 
+  "digest": "sha256:<hash>", 
+  "created": "<ISO-8601>", 
+  "config": { 
+    "Env": ["KEY=value"], 
+    "Cmd": ["python", "main.py"], 
+    "WorkingDir": "/app" 
+  }, 
+  "layers": [ 
+    { "digest": "sha256:aaa...", "size": 2048, "createdBy": "<alpine layer 1>" }, 
+    { "digest": "sha256:aca...", "size": 1024, "createdBy": "<alpine layer 2>" }, 
+    { "digest": "sha256:bbb...", "size": 4096, "createdBy": "COPY . /app" }, 
+    { "digest": "sha256:ccc...", "size": 8192, "createdBy": "RUN pip install ..." } 
+  ] 
+} 
+The size field for each layer entry is the byte size of its tar file on disk. 
+The manifest digest is computed as follows: serialize the manifest JSON with the digest field set to an 
+empty string "", compute the SHA-256 of that serialized bytes, then write the final manifest file with the 
+digest field set to "sha256:<computed_hash>". The digest field in the file on disk therefore reflects 
+the hash of the canonical form, not a hash of itself. 
+The number of inherited base layers depends on the base image — the example above is 
+illustrative only. 
+4.2 Layers 
+•​ COPY and RUN each produce a layer. Tar archive containing only the files added or modified by 
+that step (a delta, not a snapshot) 
+•​ Layers are stored in layers/ named by the SHA-256 digest of the tar's raw bytes. 
+•​ Layers are extracted in order; later layers overwrite earlier ones at the same path 
+•​ Layers are immutable once written. Identical filesystem content produces the same digest and 
+maps to one file on disk. Layers are not reference-counted; a layer file may be deleted by rmi even 
+if another image references the same digest. 
+•​ FROM reuses base image layers without creating a new one. WORKDIR, ENV, and CMD update 
+the image config only — they do not produce layers. 
+4.3 Base Images 
+You may use any base image(s) of your choice (e.g. a minimal Linux image, a Python image, etc). 
+Download them once as part of your initial setup and import them into the local store before any build is 
+attempted. 
+Hard Requirement: Do not download anything during build or run. All base images must be present in 
+~/.docksmith/ before any build is attempted. All operations must work fully offline.Your sample app (section 9) must 
+reference at least one base image via FROM. 
+5. Build Cache 
+The cache must be correct, deterministic, and reported to the user on every build. 
+5.1 Cache Key 
+A cache key is computed before each layer-producing instruction (COPY and RUN). A cache hit requires 
+the key to match an existing entry and the layer file to be present on disk. The key is a deterministic hash 
+of: 
+•​ Digest of the previous layer (or the base image's manifest digest for the first layer-producing 
+instruction — ensures FROM changes invalidate all downstream cache entries). 
+•​ The full instruction text as written in the Docksmithfile. 
+•​ Current WORKDIR value at the time the instruction is reached (empty string if not set). 
+•​ Current ENV state: all key=value pairs accumulated so far, serialized in lexicographically sorted key 
+order (empty string if none set). 
+•​ COPY only: SHA-256 of each source file's raw bytes, concatenated in lexicographically sorted path 
+order. 
+•​ "Previous layer" = the last COPY or RUN step; WORKDIR, ENV, and CMD are skipped when 
+walking back. 
+5.2 Rules & Output 
+Situation 
+Behaviour 
+Cache hit 
+Reuse the stored layer, skip re-execution. Print [CACHE HIT]. 
+Cache miss 
+Execute the instruction, store the resulting layer, update the cache index. Print 
+[CACHE MISS]. 
+Cascade 
+Once any step is a cache miss, all subsequent steps are also misses. 
+--no-cache 
+Skip all cache lookups and writes for this build. Layers are still written to disk normally. 
+ 
+Example build output: Commands in RUN must not require network access. All dependencies must 
+be present in the build context or a prior layer. (if you have any pip install requirements, they 
+should be present in the context and cannot be pulled via the internet. ) 
+ 
+Step 1/3 : FROM alpine:3.18 
+Step 2/3 : COPY . /app [CACHE MISS] 0.09s 
+Step 3/3 : RUN echo "build complete" [CACHE MISS] 3.82s 
+Successfully built sha256:a3f9b2c1 myapp:latest (3.91s) 
+FROM always prints its step line with no cache status or timing — it is not a layer-producing step and performs no 
+cache lookup. 
+5.3 Invalidation 
+Trigger 
+Scope 
+A COPY source file changes 
+That step and all below 
+Instruction text changes 
+That step and all below 
+FROM image changes 
+All layer-producing steps (via changed base digest in key) 
+Layer file missing from disk 
+That step and all below (cascade applies) 
+--no-cache passed 
+All steps 
+A WORKDIR value changes 
+That step and all below 
+An ENV value changes 
+That step and all below 
+ 
+6. Container Runtime 
+Requires Linux. macOS / Windows teams must use a Linux VM (WSL2, VirtualBox, etc). JUST USE A LINUX VM. 
+WSL has its own quirks. 
+To run a container: extract the image's layer tars in order into a temporary directory, isolate the process 
+into that root, apply ENV and WorkingDir, exec the command, wait for exit, print the exit code, and clean 
+up the temporary directory. 
+Hard Requirement: The container process must not read or write outside its assembled root. This is a pass/fail 
+criterion verified live during the demo. 
+Hard Requirement: The same isolation mechanism must be used for both RUN during build and docksmith run. 
+One primitive, used in two places. Skipping isolation during build does not satisfy this requirement. 
+•​ All image ENV values are injected into the process environment. -e KEY=VALUE overrides take 
+precedence over image ENV values. 
+•​ The working directory is set to the image's WorkingDir. Defaults to / if WorkingDir is not specified. 
+•​ No detached mode. The CLI blocks until the process exits. 
+•​ If no CMD is defined in the image and no command is given at docksmith run, fail with a clear error. 
+7. CLI Reference 
+Command / Flag 
+Behaviour 
+docksmith build -t 
+<name:tag> <context> 
+Parse Docksmithfile in the given context directory, execute all steps in 
+isolation, write the manifest. Log each step with cache status and duration. 
+--no-cache 
+Skip all cache lookups and writes for this build. 
+Command / Flag 
+Behaviour 
+docksmith images 
+List all images in the local store. Columns: Name, Tag, ID (first 12 characters 
+of the digest), Created. 
+docksmith rmi 
+<name:tag> 
+Remove the image manifest and all of its layer files from disk. Fail with a clear 
+error if the image does not exist. 
+Note: no reference counting is performed. If multiple images share a layer, 
+deleting one image will remove the shared layer files 
+docksmith run 
+<name:tag> [cmd] 
+Assemble the filesystem, start the container in the foreground, wait for exit. 
+[cmd] overrides the image CMD. Fail with a clear error if no CMD is defined 
+and no [cmd] is provided. 
+-e KEY=VALUE 
+Override or add an environment variable. Repeatable. 
+8. Constraints 
+Constraint 
+Detail 
+No network access during 
+build or run 
+No outbound requests during build or run. Base images are downloaded once 
+during setup; after that, everything must work offline. 
+No existing runtimes 
+Do not invoke Docker, runc, containerd, or any other container tool. Implement 
+isolation directly using OS primitives. 
+Immutable layers 
+Once written, a layer is never modified. Layers are stored once per digest but are 
+not reference-counted. rmi deletes the layer files belonging to the removed image. 
+If another image references the same layer digest, that layer file will be gone and 
+that image will be broken. This is expected behavior. 
+RUN isolation 
+RUN during build executes inside the image filesystem using the same isolation 
+mechanism as docksmith run. 
+Verified isolation 
+A file written inside a container must not appear on the host filesystem. Pass/fail at 
+demo. 
+Reproducible builds 
+The same Docksmithfile and the same source files must produce identical layer 
+digests and an identical manifest on every build on the same machine. Hint: tar 
+entries must be added in a consistent sorted order with file timestamps zeroed — 
+otherwise the digest will differ between runs and the cache will never hit. 
+Manifest timestamp 
+The created field is set once at first build and preserved on cache-hit rebuilds. 
+When all steps are cache hits, the manifest is rewritten with the original created 
+value so the manifest digest remains identical across rebuilds on the same 
+machine. 
+9. Sample App & Demo 
+Include a sample app in the repo that builds and runs using only Docksmith with no manual setup beyond 
+the initial base image import. 
+•​ The Docksmithfile must use all six instructions: FROM, COPY, RUN, WORKDIR, ENV, CMD. 
+•​ FROM must reference one of your chosen base images. 
+•​ At least one ENV value must be overridable via -e at runtime to demonstrate the override 
+behaviour. 
+•​ All dependencies must be bundled — no network access during build or run. The app must produce 
+visible output. 
+ 
+# 
+Command / Action 
+Demonstrates 
+1 
+docksmith build -t myapp:latest 
+. (cold build) 
+All layer-producing steps show [CACHE MISS]. Build completes with total 
+time printed. 
+2 
+docksmith build -t myapp:latest 
+. (warm build) 
+All layer-producing steps show [CACHE HIT]. Build completes 
+near-instantly. 
+3 
+Edit a source file, then rebuild 
+The affected step and all steps below it show [CACHE MISS]. Steps 
+above it show [CACHE HIT]. 
+4 
+docksmith images 
+The image is listed with correct Name, Tag, ID (12-char digest prefix), and 
+Created timestamp. 
+5 
+docksmith run myapp:latest 
+Container starts, produces visible output, and exits cleanly. 
+6 
+docksmith run -e KEY=newVal 
+myapp:latest 
+The env override is applied correctly inside the container. 
+7 
+Write a file inside the container, 
+then check the host 
+PASS / FAIL: the file must not appear anywhere on the host filesystem. 
+8 
+docksmith rmi myapp:latest 
+The image manifest and all associated layer files are removed from 
+~/.docksmith/. 
+TL;DR- What You Are Building & What Is Expected 
+You are building three things: 
+1. A build system that reads a Docksmithfile and executes six instructions: FROM, COPY, RUN, 
+WORKDIR, ENV, and CMD. Each COPY and RUN produces an immutable delta layer stored as a 
+content-addressed tar file under 
+~/.docksmith/layers/. The final image is a JSON manifest in ~/.docksmith/images/ listing all layers and 
+config. 
+2. A build cache that is deterministic and correct. Before every COPY or RUN, a cache key is computed 
+from the previous layer's digest (or the base image's manifest digest for the very first layer-producing 
+instruction) + the instruction text + the current WORKDIR value at the time the instruction is reached 
+(empty string if not set) + the current ENV state accumulated so far, serialized in lexicographically sorted 
+key order (empty string if no ENV has been set) + (for COPY) the hash of source files in lexicographically 
+sorted order. A hit reuses the stored layer and prints [CACHE HIT]. A miss executes, stores, and prints 
+[CACHE MISS]. Any miss cascades all steps below it to misses. Builds must be byte-for-byte 
+reproducible: tar entries sorted, timestamps zeroed (important). 
+3. A container runtime that assembles the image filesystem by extracting all layer tars in order into a 
+temporary directory, then isolates a process into that root (Linux process isolation). The same isolation 
+primitive must be used for both RUN during build and docksmith run. A file written inside a container must 
+not appear on the host. This is a hard pass/fail at the demo. 

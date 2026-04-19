@@ -1,0 +1,153 @@
+{
+  "generated_at": "2026-04-16T08:37:46.210090+00:00",
+  "images": [
+    {
+      "name": "alpine",
+      "tag": "latest",
+      "digest": "sha256:1cb5395606b1",
+      "created": "2026-04-16T08:21:17.433256+00:00",
+      "size_mb": 8.28,
+      "layer_count": 1,
+      "cmd": [
+        "/bin/sh"
+      ],
+      "workdir": "",
+      "env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      ]
+    },
+    {
+      "name": "myapp",
+      "tag": "latest",
+      "digest": "sha256:cc1a8a4b4ac9",
+      "created": "2026-04-16T08:21:47.406269+00:00",
+      "size_mb": 119.28,
+      "layer_count": 3,
+      "cmd": [
+        "python3",
+        "app.py"
+      ],
+      "workdir": "/app",
+      "env": [
+        "PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PYTHON_VERSION=3.11",
+        "APP_NAME=docksmith-sample",
+        "GREETING=Hello"
+      ]
+    },
+    {
+      "name": "myappv2",
+      "tag": "latest",
+      "digest": "sha256:5a5186bdbbdd",
+      "created": "2026-04-16T08:14:09.382902+00:00",
+      "size_mb": 119.28,
+      "layer_count": 3,
+      "cmd": [
+        "python3",
+        "app.py"
+      ],
+      "workdir": "/app",
+      "env": [
+        "PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PYTHON_VERSION=3.11",
+        "APP_NAME=docksmith-sample",
+        "GREETING=Hello"
+      ]
+    },
+    {
+      "name": "python",
+      "tag": "3.11-slim",
+      "digest": "sha256:4140e3e0be73",
+      "created": "2026-04-16T08:21:14.342237+00:00",
+      "size_mb": 119.26,
+      "layer_count": 1,
+      "cmd": [
+        "python3"
+      ],
+      "workdir": "",
+      "env": [
+        "PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PYTHON_VERSION=3.11"
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "digest": "sha256:956612816ca3",
+      "size_mb": 119.26,
+      "created": "2026-04-16T08:07:08.147682+00:00"
+    },
+    {
+      "digest": "sha256:153dcc712d84",
+      "size_mb": 8.28,
+      "created": "2026-04-16T08:07:11.840040+00:00"
+    },
+    {
+      "digest": "sha256:84ff92691f90",
+      "size_mb": 0.01,
+      "created": "2026-04-16T08:14:10.479795+00:00"
+    },
+    {
+      "digest": "sha256:c4a52e87ade7",
+      "size_mb": 0.01,
+      "created": "2026-04-16T08:14:09.783607+00:00"
+    }
+  ],
+  "cache": {
+    "total_keys": 3,
+    "hits": 3,
+    "misses": 0,
+    "hit_rate": 100.0,
+    "index_size_kb": 0.4
+  },
+  "build_log": [
+    {
+      "time": "2026-04-16T08:30:01.221408+00:00",
+      "image": "myapp:latest",
+      "digest": "sha256:cc1a8a4b4ac995e88469eac4b310dc0028bcc0547499c2c63e7185ed2e894be3",
+      "message": "built successfully",
+      "status": "built"
+    },
+    {
+      "time": "2026-04-16T08:21:48.602519+00:00",
+      "image": "myapp:latest",
+      "digest": "sha256:cc1a8a4b4ac995e88469eac4b310dc0028bcc0547499c2c63e7185ed2e894be3",
+      "message": "built successfully",
+      "status": "built"
+    },
+    {
+      "time": "2026-04-16T08:14:10.561795+00:00",
+      "image": "myappv2:latest",
+      "digest": "sha256:5a5186bdbbddc58a1a2cd24e108840f024c7ed0568bcf69a7008727318038382",
+      "message": "built successfully",
+      "status": "built"
+    },
+    {
+      "time": "2026-04-16T08:10:28.404935+00:00",
+      "image": "myapp:latestv2",
+      "digest": "sha256:465730e240fdd2bf25e0b4732117d45447dd144ed8e73eb0394112266ebce2ea",
+      "message": "built successfully",
+      "status": "built"
+    },
+    {
+      "time": "2026-04-16T08:09:18.510075+00:00",
+      "image": "myapp:latest",
+      "digest": "sha256:43b196495e9855d7e2ad3ab27ff1dd0e143fc613e2c0ba82e37bf4ca19ce9699",
+      "message": "built successfully",
+      "status": "built"
+    },
+    {
+      "time": "2026-04-16T08:08:08.002104+00:00",
+      "image": "myapp:latest",
+      "digest": "sha256:0df355b4f35b30b3f072d32c3628285358b38ef748f1d706b5a69fd96c8d0f79",
+      "message": "built successfully",
+      "status": "built"
+    }
+  ],
+  "storage": {
+    "layers_mb": 127.56,
+    "cache_mb": 0.0,
+    "images_mb": 0.0,
+    "total_mb": 127.56
+  }
+}

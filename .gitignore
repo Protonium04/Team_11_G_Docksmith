@@ -21,7 +21,7 @@ htmlcov/
 
 # Docksmith runtime state
 .docksmith/layers/
-.claude
+
 
 # Compiled binaries
 setup-base
@@ -32,3 +32,5 @@ docksmith
 .idea/
 *.DS_Store
 Thumbs.db
+
+\~/docksmith_venv/

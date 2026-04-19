@@ -166,6 +166,10 @@ def build_image(context_dir: str, name: str, tag: str, no_cache: bool = False):
 
     # Write build log entry
     _append_build_log(name, tag, saved.digest)
+
+    # Auto-refresh dashboard data.json so the HTML updates without manual step
+    _refresh_dashboard()
+
     return saved
 
 
@@ -214,7 +218,7 @@ def _execute_copy(src_pattern, dest, context_dir, current_layers, workdir) -> st
                 shutil.copytree(src_path, os.path.join(dest_abs, os.path.basename(src_path)), dirs_exist_ok=True)
 
         all_paths = collect_all_paths(dest_abs)
-        tar_bytes = create_delta_tar(dest_abs, all_paths)
+        tar_bytes = create_delta_tar(rootfs, all_paths)
         return store_layer(tar_bytes)
 
 
@@ -236,7 +240,11 @@ def _execute_run(command, current_layers, env_dict, workdir, isolate_fn) -> str:
         return store_layer(tar_bytes)
 
 
-def _append_build_log(name, tag, digest):
+def _append_build_log(name: str, tag: str, digest: str):
+    """
+    Append a build event to ~/.docksmith/build_log.json.
+    Keeps the last 50 entries.
+    """
     import json
     from datetime import datetime, timezone
     log_path = os.path.expanduser("~/.docksmith/build_log.json")
@@ -251,9 +259,32 @@ def _append_build_log(name, tag, digest):
     events.insert(0, {
         "time":    datetime.now(timezone.utc).isoformat(),
         "image":   f"{name}:{tag}",
+        "digest":  digest,
         "message": "built successfully",
         "status":  "built",
     })
     events = events[:50]
     with open(log_path, "w") as f:
         json.dump(events, f, indent=2)
+
+
+def _refresh_dashboard():
+    """
+    Regenerate dashboard/data.json automatically after every build.
+    This means opening dashboard.html always shows fresh data with no
+    manual 'python3 dashboard/data_gen.py' step required.
+    """
+    import importlib.util, pathlib
+    # Locate data_gen.py relative to this file: ../../dashboard/data_gen.py
+    here       = pathlib.Path(__file__).resolve().parent
+    data_gen_p = here.parent / "dashboard" / "data_gen.py"
+    if not data_gen_p.exists():
+        return
+    try:
+        spec   = importlib.util.spec_from_file_location("data_gen", data_gen_p)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.generate()      # calls the same function used by --watch
+        print("  [dashboard] data.json refreshed automatically.")
+    except Exception as e:
+        print(f"  [dashboard] refresh skipped: {e}")

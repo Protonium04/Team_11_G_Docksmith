@@ -33,4 +33,4 @@ docksmith
 *.DS_Store
 Thumbs.db
 
-~\docksmith_venv
+~/
